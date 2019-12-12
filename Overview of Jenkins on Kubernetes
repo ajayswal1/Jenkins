@@ -1,0 +1,65 @@
+Overview of Jenkins on Kubernetes
+Service Level
+Our offering:
+We provide you with
+
+Jenkins master
+multiple, dedicated build agents; few tens in parallel
+pre-configured docker-in-docker host / docker builds
+On shared IBM Cloud Kubernetes clusters
+Availability:
+With JonK, we provide a resilient and recoverable Jenkins service.
+
+JonK is based on open-source Jenkins so the program itself can only run in a single instance at any time. This means that uninterrupted continuous operation is not possible.
+Crashes and cluster-node failures are handled by Kubernetes and our Monitoring so that your instance is restarted in those cases.
+The resiliency of JonK is against cluster failures and datacenter failures. We have automated failover processes for migrating instances to new/standby clusters in the same datacenter, or another datacenter.
+JonK also stores all configuration separately so that Jenkins instances can be automatically re-created on new clusters.
+Access and authentication
+See the Access and Authentication documentation for TaaS Jenkins.
+
+Upgrades
+New JonK instances are provisioned with the latest supported LTS version of Jenkins. The TaaS team internally tests new releases, and automatically upgrades all Jenkins instances on a schedule. See Jenkins Upgrades for information about how to upgrade your Jenkins version.
+
+See Kubernetes namespace below regarding the loss of namespace changes that will occur during Jenkins upgrades.
+
+Cluster Migrations
+In order to efficiently operate JonK, Kubernetes clusters are regularly expanded and re-created.
+
+Instances are regularly migrated between clusters in the same datacenter. This causes a small downtime.
+See Kubernetes namespace below regarding the loss of namespace changes that will occur during cluster migrations.
+Failover:
+In case of severe issues with Kubernetes clusters, all instances will be failed over to a standby cluster. This allows continued operation, but causes a small down time. In even more severe cases, we can perform a failover to a datacenter in a different region where each JonK instance has a replica of their data volume. This can cause a longer downtime.
+
+See Kubernetes namespace below regarding the loss of namespace changes that will occur during failovers
+Backups
+See Jenkins Backup Process for information regarding JonK user data backups.
+
+Technical details
+Storage: Every instance is assigned an individual NFS volume for the /jenkins_data/jenkins_home directory. Their size is determined by the chosen service plan. Upgrades to larger plans (with more storage) can be requested.
+The base image with the Jenkins binaries and OS components is regularly replaced with new versions though automated upgrades.
+Networking: Each Kubernetes cluster has a single "Ingress endpoint" which is a virtual IP in front of a load balancer. Based on the requested hostname, the load balancer decides which instance a request should go to.
+Customer instances have individual DNS addresses that point to the cluster ingress where they currently run on.
+After a cluster migration, the DNS address will point to the new cluster. Clients may experience a delay before they know the new address (We set this delay to only 1 minute but clients often decide to ignore it).
+Clients can not use the IP address to access their instance since a) it changes with migrations, b) the load balancer can't route a request without hostname.
+The ingress endpoint is an address on the IBM Blue 9.0.0.0/8 network. This means Jenkins is only accessible from inside the IBM network, not from the internet.
+JNLP Agent port: Each customer is assigned a "globally unique" port in JonK that forwards to your Jenkins' incoming JNLP port. All of these ports are exposed on each clusters' ingress endpoint. You can reach your JNLP port by using your DNS address and that port.
+Build Agents: With Jenkins you can run builds/jobs on the master, or on an agent. We discourage building on the master and pre-configure each JonK instance to use build agents.
+Your instance is configured to start a new agent in a Kubernetes pod for each build you perform. The pod/container with that agent will be stopped and removed after the build.
+These agents on Kubernetes run from a docker image that contains some common tools and the Jenkins agent binary. Our image is built from https://github.ibm.com/TAAS/Jenkins-on-Kubernetes/tree/master/docker-image-jenkins-agent-jnlp">https://github.ibm.com/TAAS/Jenkins-on-Kubernetes/tree/master/docker-image-jenkins-agent-jnlp and located at this registry: https://taas-docker-public.artifactory.swg-devops.com/taas-jenkins-on-kubernetes-agent-jnlp">taas-docker-public.artifactory.swg-devops.com/taas-jenkins-on-kubernetes-agent-jnlp. The IBM Cloud CLI and select plugins are available with this agent image. See Using the IBM Cloud CLI with a Jenkins on Kubernetes for additional information.
+To install custom packages in your own docker image to use as a pod template, please refer to the instructions in https://github.ibm.com/TAAS/demo-kubernetes-pod-image">https://github.ibm.com/TAAS/demo-kubernetes-pod-image
+When you want to use your own docker image with the built-in Kubernetes agents, you must allow Kubernetes to pull from your chosen registry. Refer to Kubernetes Namespace to find out more.
+Kubernetes: Your Jenkins instance and the default agents run on a Kubernetes cluster
+Each customer has an individual namespace for their resources
+The namespace has limits for amount of CPU, memory and containers
+You have full access to the namespace via the Kubernetes Service Account (This is used e.g. by Jenkins to start your build agents)
+The service plan you chose at https://github.ibm.com/TAAS/Jenkins-on-Kubernetes/tree/master/service-plan-files">https://github.ibm.com/TAAS/Jenkins-on-Kubernetes/tree/master/service-plan-files determines your resource limits and storage size. Upgrades to larger plans can be requested.
+Using Docker in Jenkins Builds: See Using Docker in Jenkins Builds for tips on how to build Docker images within your TaaS Kubernetes namespace.
+Known Limitations
+When you suddenly start a large number of builds (>100) at the same time, Jenkins' Kubernetes plugin can become "overwhelmed".
+Kubernetes Namespace
+Your Kubernetes namespace is deleted during upgrades, migrations, and failovers. While your Jenkins data is backed up, any changes you make to your Kubernetes namespace are not backed up. Your namespace changes will be lost as a result of upgrade, migration, and failover processes.
+
+Should you need to create Kubernetes docker-registry secrets (for example, as part of using your own docker images), TaaS does provide a sample Jenkins job to help make it easier to recreate these secrets following the deletion of your namespace. This job runs whenever Jenkins is restarted and uses Jenkins credentials to store your docker-registry docker-username and docker-password. See the "namespace-credential-injection" job in the "Jenkins configuration" folder in your Jenkins for more information.
+
+Should you need to make any other changes to your namespace in support of your jobs, TaaS strongly recommends that you have an automated way to restore these changes.
+
